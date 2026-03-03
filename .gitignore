@@ -1,0 +1,25 @@
+# IDE
+.cursor/
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+go.sum.bak
+
+# Build output
+bin/
+dist/
