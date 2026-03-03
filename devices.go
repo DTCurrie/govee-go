@@ -32,7 +32,7 @@ func (d Device) SupportsCmd(cmd string) bool {
 
 // DeviceProperties holds optional per-device constraints returned by DeviceList.
 type DeviceProperties struct {
-	// ColorTemp is non-nil when the device supports the "colorTemp" command.
+	// ColorTemp is non-nil when the device supports the "colorTem" command.
 	ColorTemp *ColorTempRange `json:"colorTemp,omitempty"`
 }
 

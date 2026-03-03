@@ -2,6 +2,10 @@
 
 An unofficial Go client library for the [Govee Developer REST API](https://developer.govee.com/docs), with an emphasis on simplicity.
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/DTCurrie/govee-go.svg)](https://pkg.go.dev/github.com/DTCurrie/govee-go)
+
+**Docs:** [pkg.go.dev](https://pkg.go.dev/github.com/DTCurrie/govee-go) · [GitHub Pages](https://DTCurrie.github.io/govee-go/)
+
 ## Installation
 
 ```shell

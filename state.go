@@ -13,7 +13,7 @@ import (
 //	{"powerState": "on"}
 //	{"brightness": 80}
 //	{"color": {"r": 255, "g": 0, "b": 0}}
-//	{"colorTemp": 5000}
+//	{"colorTem": 5000}
 type statePropertyJSON map[string]json.RawMessage
 
 // stateResponse is the shape of the data field from GET /v1/devices/state.

@@ -1,0 +1,68 @@
+name: Publish API Reference
+
+on:
+  # Publish documentation when a new release is tagged.
+  push:
+    tags: ['v*']
+
+  # Allow manually publishing documentation from a specific commit or tag.
+  workflow_dispatch:
+    inputs:
+      head:
+        description: "Git ref (tag or commit SHA) to publish documentation for."
+        required: true
+        type: string
+
+# If two concurrent runs are started, prefer the latest one.
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+
+  build:
+    name: Build website
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Check out the ref specified by workflow_dispatch,
+          # or the tag that triggered the push event.
+          ref: ${{ inputs.head || github.ref }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Install doc2go
+        run: go install go.abhg.dev/doc2go@latest
+
+      - name: Generate API reference
+        # -home sets the package whose docs appear at the root URL, so the
+        # docs land at https://DTCurrie.github.io/govee-go/ rather than
+        # https://DTCurrie.github.io/govee-go/github.com/DTCurrie/govee-go/
+        run: doc2go -home github.com/${{ github.repository }} ./...
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+
+  publish:
+    name: Publish website
+    needs: build
+
+    permissions:
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
