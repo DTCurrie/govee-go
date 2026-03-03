@@ -11,6 +11,7 @@ import (
 // newTestClient creates a Client pointed at a test server and returns both.
 func newTestClient(t *testing.T, mux *http.ServeMux) (*Client, *httptest.Server) {
 	t.Helper()
+
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	client := New("test-api-key", WithBaseURL(srv.URL))
@@ -18,7 +19,9 @@ func newTestClient(t *testing.T, mux *http.ServeMux) (*Client, *httptest.Server)
 }
 
 // respondJSON writes a Govee-style JSON envelope response.
-func respondJSON(w http.ResponseWriter, code int, data interface{}) {
+func respondJSON(t *testing.T, w http.ResponseWriter, code int, data interface{}) {
+	t.Helper()
+
 	dataBytes, _ := json.Marshal(data)
 	resp := map[string]interface{}{
 		"code":    200,
@@ -31,7 +34,10 @@ func respondJSON(w http.ResponseWriter, code int, data interface{}) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(resp)
+	err := json.NewEncoder(w).Encode(resp)
+	if err != nil {
+		t.Errorf("failed to encode response: %v", err)
+	}
 }
 
 func TestGetDevices(t *testing.T) {
@@ -43,7 +49,7 @@ func TestGetDevices(t *testing.T) {
 		if r.Header.Get("Govee-API-Key") != "test-api-key" {
 			t.Errorf("missing or wrong API key header")
 		}
-		respondJSON(w, 200, map[string]interface{}{
+		respondJSON(t, w, 200, map[string]interface{}{
 			"devices": []map[string]interface{}{
 				{
 					"device":       "AA:BB:CC:DD:EE:FF:00:11",
@@ -114,11 +120,14 @@ func TestGetDevices_APIError(t *testing.T) {
 	mux.HandleFunc("/v1/devices", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		err := json.NewEncoder(w).Encode(map[string]interface{}{
 			"code":    403,
 			"message": "Unauthorized",
 			"data":    nil,
 		})
+		if err != nil {
+			t.Errorf("failed to encode response: %v", err)
+		}
 	})
 
 	client, _ := newTestClient(t, mux)
@@ -147,7 +156,7 @@ func TestGetDeviceState(t *testing.T) {
 		if r.URL.Query().Get("model") != "H6159" {
 			t.Errorf("missing model query param")
 		}
-		respondJSON(w, 200, map[string]interface{}{
+		respondJSON(t, w, 200, map[string]interface{}{
 			"device": "AA:BB:CC",
 			"model":  "H6159",
 			"properties": []interface{}{
@@ -207,7 +216,9 @@ func TestSetColor(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/devices/control", func(w http.ResponseWriter, r *http.Request) {
 		var req controlRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("failed to decode request: %v", err)
+		}
 		if req.Cmd.Name != "color" {
 			t.Errorf("cmd.name = %q, want %q", req.Cmd.Name, "color")
 		}
@@ -219,7 +230,7 @@ func TestSetColor(t *testing.T) {
 		if colorMap["r"] != float64(255) || colorMap["g"] != float64(0) || colorMap["b"] != float64(128) {
 			t.Errorf("color value = %v", colorMap)
 		}
-		respondJSON(w, 200, map[string]interface{}{})
+		respondJSON(t, w, 200, map[string]interface{}{})
 	})
 
 	client, _ := newTestClient(t, mux)
@@ -286,7 +297,9 @@ func testControl(t *testing.T, call func(*Client) error, wantName string, wantVa
 			t.Errorf("expected PUT, got %s", r.Method)
 		}
 		var req controlRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("failed to decode request: %v", err)
+		}
 		if req.Device != "AA:BB:CC" {
 			t.Errorf("device = %q", req.Device)
 		}
@@ -299,7 +312,7 @@ func testControl(t *testing.T, call func(*Client) error, wantName string, wantVa
 		if req.Cmd.Value != wantValue {
 			t.Errorf("cmd.value = %v (%T), want %v (%T)", req.Cmd.Value, req.Cmd.Value, wantValue, wantValue)
 		}
-		respondJSON(w, 200, map[string]interface{}{})
+		respondJSON(t, w, 200, map[string]interface{}{})
 	})
 
 	client, _ := newTestClient(t, mux)

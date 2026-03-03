@@ -2,6 +2,37 @@
 
 Thanks for your interest in contributing! This project is a small, focused Go library, so the process is straightforward.
 
+## Development Setup
+
+This project uses [Task](https://taskfile.dev) as its task runner. Install it once with:
+
+```bash
+go install github.com/go-task/task/v3/cmd/task@latest
+```
+
+Then fetch all dependencies (including pinned dev tools like `golangci-lint` and `doc2go`):
+
+```bash
+task setup
+```
+
+Dev tools are tracked in `go.mod` via Go 1.24's `tool` directive, so no separate install step is needed for them -- `go mod download` pulls everything.
+
+### Common commands
+
+| Command        | Description                                    |
+| -------------- | ---------------------------------------------- |
+| `task test`    | Run the full test suite with the race detector |
+| `task lint`    | Run `golangci-lint`                            |
+| `task fmt`     | Check formatting                               |
+| `task fmt:fix` | Reformat all files in place                    |
+| `task vet`     | Run `go vet`                                   |
+| `task check`   | Run fmt, vet, lint, and test in sequence       |
+| `task build`   | Compile the package                            |
+| `task docs`    | Generate the API reference site locally        |
+
+Run `task --list` to see all available tasks.
+
 ## Getting Started
 
 1. Fork the repository and clone your fork:
@@ -11,10 +42,11 @@ Thanks for your interest in contributing! This project is a small, focused Go li
    cd govee-go
    ```
 
-2. Make sure tests pass before you start:
+2. Install dependencies and verify everything works:
 
    ```bash
-   go test ./...
+   task setup
+   task check
    ```
 
 3. Create a branch for your change:
@@ -42,7 +74,7 @@ The Govee API has some non-obvious naming. In particular, the color temperature 
 - Run the full suite before opening a PR:
 
   ```bash
-  go test -v -race ./...
+  task check
   ```
 
 ### Commits

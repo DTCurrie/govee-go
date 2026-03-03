@@ -23,3 +23,4 @@ go.sum.bak
 # Build output
 bin/
 dist/
+_site/

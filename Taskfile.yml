@@ -1,0 +1,59 @@
+# https://taskfile.dev
+version: '3'
+
+tasks:
+
+  setup:
+    desc: Download and verify all module dependencies (including dev tools).
+    cmds:
+      - go mod download
+      - go mod verify
+
+  build:
+    desc: Compile the package.
+    cmds:
+      - go build ./...
+
+  test:
+    desc: Run the full test suite with the race detector.
+    cmds:
+      - go test -v -race -count=1 ./...
+
+  vet:
+    desc: Run go vet static analysis.
+    cmds:
+      - go vet ./...
+
+  fmt:
+    desc: Check formatting (use fmt:fix to reformat in place).
+    cmds:
+      - |
+        unformatted=$(gofmt -l .)
+        if [ -n "$unformatted" ]; then
+          echo "The following files are not gofmt'd:"
+          echo "$unformatted"
+          exit 1
+        fi
+
+  fmt:fix:
+    desc: Reformat all Go source files with gofmt.
+    cmds:
+      - gofmt -w .
+
+  lint:
+    desc: Run golangci-lint (pinned version from go.mod).
+    cmds:
+      - go tool golangci-lint run ./...
+
+  docs:
+    desc: Generate the API reference site into the ./www directory.
+    cmds:
+      - go tool doc2go -home github.com/DTCurrie/govee-go ./...
+
+  check:
+    desc: Run fmt, vet, lint, and test — the full pre-commit check.
+    cmds:
+      - task: fmt
+      - task: vet
+      - task: lint
+      - task: test
