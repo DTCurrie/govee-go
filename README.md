@@ -1,153 +1,245 @@
 # govee-go
 
-An unofficial Go client library for the [Govee Developer REST API](https://developer.govee.com/docs), with an emphasis on simplicity.
+A Go client library for the [Govee API](https://developer.govee.com/).
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/DTCurrie/govee-go.svg)](https://pkg.go.dev/github.com/DTCurrie/govee-go)
-
-**Docs:** [pkg.go.dev](https://pkg.go.dev/github.com/DTCurrie/govee-go) · [GitHub Pages](https://DTCurrie.github.io/govee-go/)
+The Govee OpenAPI uses a **capability-based model**: each device self-describes the
+controls it supports (power, brightness, color, scenes, etc.) together with valid
+parameter ranges and options. All control commands are sent through a single endpoint
+using a `{type, instance, value}` triple.
 
 ## Installation
 
-```shell
+```
 go get github.com/DTCurrie/govee-go
 ```
 
 ## Getting an API Key
 
-1. Open the Govee Home app on your phone.
-2. Go to **Profile → Settings → Apply for API Key**.
-3. Submit your information and wait for the key to arrive by email.
+1. Open the Govee app on your phone.
+2. Go to **Profile → About Us → Apply for API Key**.
+3. Fill out the form. The key is emailed within a few minutes.
 
 ## Usage
 
+### Creating a client
+
 ```go
-package main
+import govee "github.com/DTCurrie/govee-go"
 
-import (
-    "context"
-    "fmt"
-    "log"
+client := govee.New("your-api-key")
+```
 
-    govee "github.com/DTCurrie/govee-go"
-)
+### Discovering devices
 
-func main() {
-    client := govee.New("your-api-key")
-
-    devices, err := client.GetDevices(context.Background())
-    if err != nil {
-        log.Fatal(err)
-    }
-    fmt.Printf("Found %d devices\n", len(devices))
-
-    for _, d := range devices {
-        fmt.Printf("  %s (%s) — %s\n", d.DeviceName, d.Model, d.DeviceID)
-    }
-
-    // Turn on the first device
-    if len(devices) > 0 {
-        d := devices[0]
-        if err := client.TurnOn(context.Background(), d.DeviceID, d.Model); err != nil {
-            log.Fatal(err)
-        }
-
-        // Set brightness to 75%
-        client.SetBrightness(context.Background(), d.DeviceID, d.Model, 75)
-
-        // Set color to orange
-        client.SetColor(context.Background(), d.DeviceID, d.Model, 255, 165, 0)
-
-        // Set color temperature to daylight (6500K)
-        client.SetColorTemp(context.Background(), d.DeviceID, d.Model, 6500)
+```go
+devices, err := client.GetDevices(ctx)
+if err != nil {
+    log.Fatal(err)
+}
+for _, d := range devices {
+    fmt.Printf("%s  sku=%s  id=%s\n", d.DeviceName, d.SKU, d.DeviceID)
+    for _, cap := range d.Capabilities {
+        fmt.Printf("  capability: type=%s instance=%s\n", cap.Type, cap.Instance)
     }
 }
 ```
 
-## API Reference
+### Checking device capabilities
 
-### Creating a Client
+Use the helper methods to avoid iterating manually:
 
 ```go
-client := govee.New(apiKey string, opts ...Option)
+if d.HasCapability(govee.CapabilityColorSetting, "colorRgb") {
+    fmt.Println("device supports RGB color")
+}
 ```
 
-Available options:
+### Controlling devices
 
-| Option                                  | Description                                    |
-| --------------------------------------- | ---------------------------------------------- |
-| `govee.WithBaseURL(url string)`         | Override the API base URL (useful for testing) |
-| `govee.WithHTTPClient(hc *http.Client)` | Replace the default HTTP client                |
-
-### Device Discovery
+All control methods accept `(ctx, sku, deviceID)` as the first three arguments.
 
 ```go
-devices, err := client.GetDevices(ctx context.Context) ([]Device, error)
+sku      := "H6008"
+deviceID := "AA:BB:CC:DD:EE:FF:00:00"
+
+// Power
+_ = client.TurnOn(ctx, sku, deviceID)
+_ = client.TurnOff(ctx, sku, deviceID)
+
+// Brightness (1–100)
+_ = client.SetBrightness(ctx, sku, deviceID, 75)
+
+// Color (RGB, each 0–255)
+_ = client.SetColor(ctx, sku, deviceID, 255, 128, 0)
+
+// Color temperature (Kelvin)
+_ = client.SetColorTemp(ctx, sku, deviceID, 4000)
+
+// Named toggle feature (e.g. gradient strip, nightlight)
+_ = client.SetToggle(ctx, sku, deviceID, "gradientToggle", true)
+
+// Work mode (appliances such as humidifiers, air purifiers)
+_ = client.SetWorkMode(ctx, sku, deviceID, govee.WorkModeValue{WorkMode: 1, ModeValue: 2})
+
+// Target temperature (kettles, heaters)
+_ = client.SetTemperature(ctx, sku, deviceID, govee.TemperatureValue{Temperature: 100, Unit: "C"})
+
+// Generic capability (advanced use)
+_ = client.ControlDevice(ctx, sku, deviceID, govee.CapabilityCommand{
+    Type:     govee.CapabilityRange,
+    Instance: "brightness",
+    Value:    50,
+})
 ```
 
-Returns all devices associated with the API key. Each `Device` includes:
+### Scenes
 
-| Field                  | Type             | Description                                                                     |
-| ---------------------- | ---------------- | ------------------------------------------------------------------------------- |
-| `DeviceID`             | `string`         | MAC address, used in all control/state calls                                    |
-| `Model`                | `string`         | Product model (e.g. `"H6159"`)                                                  |
-| `DeviceName`           | `string`         | User-assigned name from the Govee app                                           |
-| `Controllable`         | `bool`           | Whether the device accepts control commands                                     |
-| `Retrievable`          | `bool`           | Whether the device state can be queried                                         |
-| `SupportCmds`          | `[]string`       | Commands the device accepts: `"turn"`, `"brightness"`, `"color"`, `"colorTem"` |
-| `Properties.ColorTemp` | `*ColorTemRange` | Color temperature range in Kelvin (nil if not supported)                        |
+#### Listing and activating built-in dynamic scenes
 
-Use `device.SupportsCmd("color")` to check command support.
-
-### Querying Device State
+Dynamic scenes (animated color loops, effects, etc.) are fetched separately from
+the device list because a device can have hundreds of them:
 
 ```go
-state, err := client.GetDeviceState(ctx context.Context, deviceID, model string) (*DeviceState, error)
+scenes, err := client.GetScenes(ctx, sku, deviceID)
+if err != nil {
+    log.Fatal(err)
+}
+for _, s := range scenes {
+    fmt.Printf("scene: %s  id=%d paramId=%d\n", s.Name, s.Value.ID, s.Value.ParamID)
+}
+
+// Activate a scene
+if len(scenes) > 0 {
+    _ = client.SetLightScene(ctx, sku, deviceID, scenes[0].Value)
+}
 ```
 
-Only available when `device.Retrievable == true`. Returns:
-
-| Field        | Type     | Description                                                         |
-| ------------ | -------- | ------------------------------------------------------------------- |
-| `Online`     | `bool`   | Whether the device is reachable (cached; may be stale)              |
-| `PowerState` | `string` | `"on"` or `"off"`                                                   |
-| `Brightness` | `int`    | Current brightness (0–100)                                          |
-| `Color`      | `*Color` | Current RGB color (`nil` if not in color mode)                      |
-| `ColorTemp`  | `int`    | Current color temperature in Kelvin (`0` if not in color temp mode) |
-
-### Controlling Devices
-
-All control methods require `deviceID` (MAC address) and `model`.
+#### DIY scenes
 
 ```go
-err = client.TurnOn(ctx, deviceID, model string) error
-err = client.TurnOff(ctx, deviceID, model string) error
-err = client.SetBrightness(ctx, deviceID, model string, brightness int) error  // 0-100
-err = client.SetColor(ctx, deviceID, model string, r, g, b int) error          // 0-255 per channel
-err = client.SetColorTemp(ctx, deviceID, model string, kelvin int) error
+diyScenes, err := client.GetDIYScenes(ctx, sku, deviceID)
+if err != nil {
+    log.Fatal(err)
+}
+if len(diyScenes) > 0 {
+    _ = client.SetDIYScene(ctx, sku, deviceID, diyScenes[0].Value)
+}
 ```
 
-### Error Handling
-
-API errors are returned as `*APIError`:
+#### Snapshots
 
 ```go
+_ = client.SetSnapshot(ctx, sku, deviceID, 1)
+```
+
+### Music mode
+
+```go
+autoColor := 1
+_ = client.SetMusicMode(ctx, sku, deviceID, govee.MusicModeValue{
+    MusicMode:   3,
+    Sensitivity: 80,
+    AutoColor:   &autoColor,
+})
+```
+
+### Segment control (light strips with individually-addressable segments)
+
+```go
+// Color segments 0, 1, and 2 red
+_ = client.SetSegmentColor(ctx, sku, deviceID, []int{0, 1, 2}, 0xFF0000)
+
+// Set segment 3 brightness to 50%
+_ = client.SetSegmentBrightness(ctx, sku, deviceID, []int{3}, 50)
+```
+
+### Querying device state
+
+```go
+state, err := client.GetDeviceState(ctx, sku, deviceID)
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Println("online:", state.IsOnline())
+
+if on, ok := state.PowerState(); ok {
+    fmt.Println("power:", on)
+}
+if pct, ok := state.Brightness(); ok {
+    fmt.Println("brightness:", pct)
+}
+if r, g, b, ok := state.ColorRGB(); ok {
+    fmt.Printf("color: rgb(%d,%d,%d)\n", r, g, b)
+}
+if k, ok := state.ColorTemp(); ok {
+    fmt.Println("color temp:", k, "K")
+}
+
+// Low-level access to any capability state
+if cap := state.FindState(govee.CapabilityWorkMode, "workMode"); cap != nil {
+    fmt.Printf("work mode state: %s\n", cap.State.Value)
+}
+```
+
+### Real-time device events via MQTT
+
+`EventClient` subscribes to the Govee MQTT broker and calls your handler for each
+device state update:
+
+```go
+ec := govee.NewEventClient("your-api-key", func(event govee.DeviceEvent) {
+    fmt.Printf("event from %s (%s)\n", event.DeviceName, event.SKU)
+    for _, cap := range event.Capabilities {
+        fmt.Printf("  %s/%s = %s\n", cap.Type, cap.Instance, cap.State)
+    }
+})
+
+if err := ec.Connect(ctx); err != nil {
+    log.Fatal(err)
+}
+defer ec.Close()
+
+// Block until done
+<-ctx.Done()
+```
+
+## Rate limits
+
+The API allows up to **10,000 requests per account per day**. A `*govee.APIError`
+with `Code == 429` is returned when the limit is exceeded.
+
+## Error handling
+
+All API errors are returned as `*govee.APIError`:
+
+```go
+devices, err := client.GetDevices(ctx)
 if err != nil {
     var apiErr *govee.APIError
     if errors.As(err, &apiErr) {
         fmt.Printf("API error %d: %s\n", apiErr.Code, apiErr.Message)
     }
+    log.Fatal(err)
 }
 ```
 
-## Rate Limits
+## Capability type constants
 
-| Scope             | Limit                         |
-| ----------------- | ----------------------------- |
-| All APIs combined | 10,000 requests/day           |
-| `GetDevices`      | 10 requests/minute            |
-| `GetDeviceState`  | 10 requests/minute per device |
-| Control commands  | 10 requests/minute per device |
+The package exports string constants for all well-known capability types:
 
-## License
-
-MIT — see [LICENSE](LICENSE).
+| Constant                        | Value                                        |
+| ------------------------------- | -------------------------------------------- |
+| `CapabilityOnOff`               | `devices.capabilities.on_off`                |
+| `CapabilityToggle`              | `devices.capabilities.toggle`                |
+| `CapabilityRange`               | `devices.capabilities.range`                 |
+| `CapabilityMode`                | `devices.capabilities.mode`                  |
+| `CapabilityColorSetting`        | `devices.capabilities.color_setting`         |
+| `CapabilitySegmentColorSetting` | `devices.capabilities.segment_color_setting` |
+| `CapabilityMusicSetting`        | `devices.capabilities.music_setting`         |
+| `CapabilityDynamicScene`        | `devices.capabilities.dynamic_scene`         |
+| `CapabilityWorkMode`            | `devices.capabilities.work_mode`             |
+| `CapabilityTemperatureSetting`  | `devices.capabilities.temperature_setting`   |
+| `CapabilityOnline`              | `devices.capabilities.online`                |
+| `CapabilityProperty`            | `devices.capabilities.property`              |
+| `CapabilityEvent`               | `devices.capabilities.event`                 |

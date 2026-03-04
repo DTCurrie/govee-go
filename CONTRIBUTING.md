@@ -1,115 +1,89 @@
-# Contributing to govee-go
+# Contributing
 
-Thanks for your interest in contributing! This project is a small, focused Go library, so the process is straightforward.
+This project uses [Task](https://taskfile.dev) as its task runner. See the [installation docs](https://taskfile.dev/docs/installation) for instructions.
 
-## Development Setup
+## Setup
 
-This project uses [Task](https://taskfile.dev) as its task runner. Install it once with:
-
-```bash
-go install github.com/go-task/task/v3/cmd/task@latest
 ```
-
-Then fetch all dependencies (including pinned dev tools like `golangci-lint` and `doc2go`):
-
-```bash
+git clone https://github.com/DTCurrie/govee-go.git
+cd govee-go
 task setup
 ```
 
-Dev tools are tracked in `go.mod` via Go 1.24's `tool` directive, so no separate install step is needed for them -- `go mod download` pulls everything.
+## Common tasks
 
-### Common commands
+| Command        | What it does                                             |
+| -------------- | -------------------------------------------------------- |
+| `task test`    | Run the full test suite with the race detector           |
+| `task lint`    | Run golangci-lint (pinned version from go.mod)           |
+| `task fmt`     | Check formatting                                         |
+| `task fmt:fix` | Reformat all Go source files with gofmt                  |
+| `task vet`     | Run go vet static analysis                               |
+| `task build`   | Compile the package                                      |
+| `task docs`    | Generate the API reference into `./www`                  |
+| `task check`   | Run fmt, vet, lint, and test — the full pre-commit check |
 
-| Command        | Description                                    |
-| -------------- | ---------------------------------------------- |
-| `task test`    | Run the full test suite with the race detector |
-| `task lint`    | Run `golangci-lint`                            |
-| `task fmt`     | Check formatting                               |
-| `task fmt:fix` | Reformat all files in place                    |
-| `task vet`     | Run `go vet`                                   |
-| `task check`   | Run fmt, vet, lint, and test in sequence       |
-| `task build`   | Compile the package                            |
-| `task docs`    | Generate the API reference site locally        |
+Run `task check` before submitting a pull request.
 
-Run `task --list` to see all available tasks.
+## Project conventions
 
-## Getting Started
+### Package structure
 
-1. Fork the repository and clone your fork:
+| File         | Purpose                                                               |
+| ------------ | --------------------------------------------------------------------- |
+| `govee.go`   | `Client` struct, HTTP helpers (`doGet`, `doPost`), functional options |
+| `devices.go` | `Device`, `Capability`, and related types; `GetDevices`               |
+| `control.go` | `ControlDevice` + all typed control helpers                           |
+| `state.go`   | `GetDeviceState` + `DeviceStateResponse` convenience methods          |
+| `scenes.go`  | `GetScenes`, `GetDIYScenes`                                           |
+| `events.go`  | `EventClient` for MQTT subscriptions                                  |
+| `errors.go`  | `APIError` type                                                       |
 
-   ```bash
-   git clone https://github.com/<your-username>/govee-go.git
-   cd govee-go
-   ```
+### Device identification
 
-2. Install dependencies and verify everything works:
+Devices are always identified by the `(sku, deviceID)` pair. These correspond to
+the `sku` and `device` fields in the API. Both values come from `GetDevices`.
 
-   ```bash
-   task setup
-   task check
-   ```
+### Capability model
 
-3. Create a branch for your change:
+The Govee API uses a capability-based model. Control commands are always a
+`{type, instance, value}` triple matching what a device advertises in its
+`Capabilities` slice. The `ControlDevice` method is the generic form; prefer the
+typed helpers (`TurnOn`, `SetBrightness`, etc.) for well-known capabilities.
 
-   ```bash
-   git checkout -b my-change
-   ```
+### Adding new capability helpers
 
-## Making Changes
+1. Add a helper method to `control.go` that calls `ControlDevice` with the
+   correct `type`/`instance`/`value`.
+2. If the value is a struct (not a scalar), define a named value type in
+   `control.go` (e.g. `MusicModeValue`, `WorkModeValue`).
+3. Add a test in `control_test.go` that verifies the correct capability fields are
+   sent.
 
-### Code style
+### HTTP transport
 
-- Run `gofmt` (or `goimports`) before committing. CI will reject unformatted code.
-- Follow the conventions already in the codebase: `context.Context` as the first parameter, error wrapping with `%w`, functional options for configuration.
-- Keep the dependency list at zero. Everything should use the Go standard library.
+`doGet` handles `GET /user/devices` and uses the `{code, message, data}` envelope.
+`doPost` handles all other endpoints and uses the `{requestId, payload}` request
+envelope and `{requestId, code, msg/message, payload}` response envelope.
 
-### Wire-format strings
+Non-200 `code` values inside the response envelope are returned as `*APIError` even
+when the HTTP status is 200. This matches Govee's API behavior.
 
-The Govee API has some non-obvious naming. In particular, the color temperature field is `"colorTem"` (not `"colorTemp"`) in all JSON payloads. When adding support for new API fields, always verify the exact string against the [Govee Developer API Reference](https://govee-public.s3.amazonaws.com/developer-docs/GoveeAPIReference.pdf).
+### Testing
 
-### Tests
+- Use `net/http/httptest` for HTTP mocking — no external test dependencies.
+- Keep tests in the `govee_test` external package to test the public API.
+- Shared test helpers live in `testutils_test.go`.
+- Use table-driven tests where multiple input/output combinations are tested.
+- Call `t.Parallel()` on independent tests and sub-tests.
+- Use `t.Helper()` in test helper functions.
+- Use `t.Cleanup()` for teardown (e.g., closing test servers).
 
-- All changes should include tests. The project uses `net/http/httptest` to mock the Govee API -- no real API calls are made during tests.
-- Mock responses must match the actual Govee API wire format (field names, nesting, types).
-- Run the full suite before opening a PR:
+### Dependencies
 
-  ```bash
-  task check
-  ```
+Runtime dependencies are intentionally minimal. The only non-standard dependency is
+`github.com/eclipse/paho.mqtt.golang` for MQTT event subscriptions. Avoid adding
+new runtime dependencies without a strong reason.
 
-### Commits
-
-- Write clear, concise commit messages that describe _why_, not just _what_.
-- Keep commits focused -- one logical change per commit.
-
-## Submitting a Pull Request
-
-1. Push your branch to your fork.
-2. Open a pull request against `main`.
-3. Describe what you changed and why. If it fixes a bug, include steps to reproduce.
-4. Make sure all tests pass in CI.
-
-## Reporting Bugs
-
-Open an issue with:
-
-- What you expected to happen.
-- What actually happened (include error messages or unexpected responses).
-- The device model and firmware version, if relevant.
-- A minimal code snippet that reproduces the problem.
-
-## Scope
-
-This library wraps the [Govee Developer API v1](https://developer.govee.com/docs). Contributions that stay within this scope are welcome:
-
-- Bug fixes
-- Missing API field support
-- Better error messages or validation
-- Documentation improvements
-- Test coverage improvements
-
-For large changes (new abstractions, breaking API changes, v2 API support), please open an issue first to discuss the approach.
-
-## License
-
-By contributing, you agree that your contributions will be licensed under the [MIT License](LICENSE).
+`golangci-lint` and `doc2go` are tool-only dependencies declared with Go 1.24+
+`tool` directives in `go.mod`.

@@ -4,124 +4,105 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"slices"
 )
 
-// Device represents a Govee smart device returned by the API.
+// Device type constants.
+const (
+	DeviceLight         = "devices.types.light"
+	DeviceAirPurifier   = "devices.types.air_purifier"
+	DeviceThermometer   = "devices.types.thermometer"
+	DeviceSocket        = "devices.types.socket"
+	DeviceSensor        = "devices.types.sensor"
+	DeviceHeater        = "devices.types.heater"
+	DeviceHumidifier    = "devices.types.humidifier"
+	DeviceDehumidifier  = "devices.types.dehumidifier"
+	DeviceIceMaker      = "devices.types.ice_maker"
+	DeviceAromaDiffuser = "devices.types.aroma_diffuser"
+	DeviceBox           = "devices.types.box"
+)
+
+// Capability type constants.
+const (
+	CapabilityOnOff               = "devices.capabilities.on_off"
+	CapabilityToggle              = "devices.capabilities.toggle"
+	CapabilityRange               = "devices.capabilities.range"
+	CapabilityMode                = "devices.capabilities.mode"
+	CapabilityColorSetting        = "devices.capabilities.color_setting"
+	CapabilitySegmentColorSetting = "devices.capabilities.segment_color_setting"
+	CapabilityMusicSetting        = "devices.capabilities.music_setting"
+	CapabilityDynamicScene        = "devices.capabilities.dynamic_scene"
+	CapabilityWorkMode            = "devices.capabilities.work_mode"
+	CapabilityTemperatureSetting  = "devices.capabilities.temperature_setting"
+	CapabilityOnline              = "devices.capabilities.online"
+	CapabilityProperty            = "devices.capabilities.property"
+	CapabilityEvent               = "devices.capabilities.event"
+)
+
+// Device represents a Govee device and its capabilities as returned by GetDevices.
 type Device struct {
-	// DeviceID is the MAC address of the device, used to identify it in control and state requests.
-	DeviceID string `json:"device"`
-	// Model is the product model string (e.g. "H6159").
-	Model string `json:"model"`
-	// DeviceName is the user-assigned name from the Govee app.
-	DeviceName string `json:"deviceName"`
-	// Controllable is true when the device accepts control commands.
-	Controllable bool `json:"controllable"`
-	// Retrievable is true when the device state can be queried.
-	Retrievable bool `json:"retrievable"`
-	// SupportCmds lists the commands the device accepts: "turn", "brightness", "color", "colorTem".
-	SupportCmds []string `json:"supportCmds"`
-	// Properties holds optional per-device property constraints.
-	Properties DeviceProperties `json:"properties"`
+	SKU          string       `json:"sku"`
+	DeviceID     string       `json:"device"`
+	DeviceName   string       `json:"deviceName,omitempty"`
+	Type         string       `json:"type,omitempty"`
+	Capabilities []Capability `json:"capabilities"`
 }
 
-// SupportsCmd reports whether the device supports the given command name.
-func (d Device) SupportsCmd(cmd string) bool {
-	return slices.Contains(d.SupportCmds, cmd)
+// FindCapability returns the first capability matching the given type and instance,
+// or nil if the device does not have that capability.
+func (d Device) FindCapability(capType, instance string) *Capability {
+	for i := range d.Capabilities {
+		if d.Capabilities[i].Type == capType && d.Capabilities[i].Instance == instance {
+			return &d.Capabilities[i]
+		}
+	}
+	return nil
 }
 
-// DeviceProperties holds optional per-device constraints returned by DeviceList.
-type DeviceProperties struct {
-	// ColorTemp is non-nil when the device supports the "colorTem" command.
-	ColorTemp *ColorTempRange `json:"colorTemp,omitempty"`
+// HasCapability reports whether the device advertises the given capability type and instance.
+func (d Device) HasCapability(capType, instance string) bool {
+	return d.FindCapability(capType, instance) != nil
 }
 
-// ColorTempRange is the supported color temperature range for a device, in Kelvin.
-type ColorTempRange struct {
-	Min int `json:"min"`
-	Max int `json:"max"`
+// Capability represents a single device capability with its parameter schema and
+// optional current state (populated by GetDeviceState).
+type Capability struct {
+	Type       string           `json:"type"`
+	Instance   string           `json:"instance"`
+	Parameters json.RawMessage  `json:"parameters,omitempty"`
+	State      *CapabilityState `json:"state,omitempty"`
+	AlarmType  int              `json:"alarmType,omitempty"`
+	EventState json.RawMessage  `json:"eventState,omitempty"`
 }
 
-// DeviceState is the current reported state of a device.
-type DeviceState struct {
-	// Online indicates whether the device is reachable. Note: this is cached by
-	// the Govee API and may be stale; control commands should still be attempted
-	// even when Online is false.
-	Online bool
-	// PowerState is "on" or "off".
-	PowerState string
-	// Brightness is the current brightness level (0–100). 0 means off or unknown.
-	Brightness int
-	// Color is the current RGB color, or nil if not reported.
-	Color *Color
-	// ColorTemp is the current color temperature in Kelvin, or 0 if not reported.
-	ColorTemp int
+// CapabilityState holds the current value of a capability, as returned by GetDeviceState.
+type CapabilityState struct {
+	Value json.RawMessage `json:"value"`
 }
 
-// Color represents an RGB color value.
-type Color struct {
-	R int `json:"r"`
-	G int `json:"g"`
-	B int `json:"b"`
+// EnumOption is a single named option within an ENUM capability parameter.
+type EnumOption struct {
+	Name  string          `json:"name"`
+	Value json.RawMessage `json:"value"`
 }
 
-// deviceListResponse is the shape of the data field from GET /v1/devices.
-type deviceListResponse struct {
-	Devices []deviceJSON `json:"devices"`
+// EnumParameters describes the valid values for an ENUM-typed capability parameter.
+type EnumParameters struct {
+	DataType string       `json:"dataType"`
+	Options  []EnumOption `json:"options"`
 }
 
-// deviceJSON mirrors the raw API device object for unmarshalling. Properties
-// uses a custom struct to accommodate the nested colorTemp range.
-type deviceJSON struct {
-	Device       string          `json:"device"`
-	Model        string          `json:"model"`
-	DeviceName   string          `json:"deviceName"`
-	Controllable bool            `json:"controllable"`
-	Retrievable  bool            `json:"retrievable"`
-	SupportCmds  []string        `json:"supportCmds"`
-	Properties   devicePropsJSON `json:"properties"`
-}
-
-type devicePropsJSON struct {
-	ColorTemp *colorTemRangeJSON `json:"colorTem,omitempty"`
-}
-
-type colorTemRangeJSON struct {
-	Range struct {
-		Min int `json:"min"`
-		Max int `json:"max"`
-	} `json:"range"`
-}
-
-// GetDevices returns all Govee devices associated with the API key.
+// GetDevices returns all devices associated with the API key along with their capabilities.
+// Use the returned Device values to discover what each device supports and to build
+// control commands.
 func (c *Client) GetDevices(ctx context.Context) ([]Device, error) {
-	data, err := c.doGet(ctx, "/v1/devices", nil)
+	data, err := c.doGet(ctx, "/user/devices")
 	if err != nil {
 		return nil, err
 	}
 
-	var resp deviceListResponse
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return nil, fmt.Errorf("govee: failed to decode device list: %w", err)
-	}
-
-	devices := make([]Device, 0, len(resp.Devices))
-	for _, d := range resp.Devices {
-		dev := Device{
-			DeviceID:     d.Device,
-			Model:        d.Model,
-			DeviceName:   d.DeviceName,
-			Controllable: d.Controllable,
-			Retrievable:  d.Retrievable,
-			SupportCmds:  d.SupportCmds,
-		}
-		if d.Properties.ColorTemp != nil {
-			dev.Properties.ColorTemp = &ColorTempRange{
-				Min: d.Properties.ColorTemp.Range.Min,
-				Max: d.Properties.ColorTemp.Range.Max,
-			}
-		}
-		devices = append(devices, dev)
+	var devices []Device
+	if err := json.Unmarshal(data, &devices); err != nil {
+		return nil, fmt.Errorf("govee: failed to decode devices: %w", err)
 	}
 	return devices, nil
 }
