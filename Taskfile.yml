@@ -1,8 +1,7 @@
 # https://taskfile.dev
-version: '3'
+version: "3"
 
 tasks:
-
   setup:
     desc: Download and verify all module dependencies (including dev tools).
     cmds:

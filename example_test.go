@@ -27,8 +27,8 @@ func ExampleClient_GetDevices() {
 			},
 		}
 		type envelope struct {
-			Code    int           `json:"code"`
-			Message string        `json:"message"`
+			Code    int            `json:"code"`
+			Message string         `json:"message"`
 			Data    []govee.Device `json:"data"`
 		}
 		w.Header().Set("Content-Type", "application/json")

@@ -94,9 +94,9 @@ func TestDeviceStateResponse_IsOnline(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name  string
-		resp  *govee.DeviceStateResponse
-		want  bool
+		name string
+		resp *govee.DeviceStateResponse
+		want bool
 	}{
 		{
 			"online true",
@@ -174,10 +174,10 @@ func TestDeviceStateResponse_Brightness(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		resp       *govee.DeviceStateResponse
-		wantPct    int
-		wantFound  bool
+		name      string
+		resp      *govee.DeviceStateResponse
+		wantPct   int
+		wantFound bool
 	}{
 		{
 			"brightness 75",
@@ -209,10 +209,10 @@ func TestDeviceStateResponse_ColorRGB(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		resp       *govee.DeviceStateResponse
+		name                string
+		resp                *govee.DeviceStateResponse
 		wantR, wantG, wantB int
-		wantFound  bool
+		wantFound           bool
 	}{
 		{
 			"red",
